@@ -19,7 +19,7 @@ import com.google.gson.GsonBuilder;
  * EnvTest
  */
 @WebServlet("/envtest")
-public class EnvTest {
+public class EnvTest extends HttpServlet  {
     static String DB_URI = "";
     // *******************
     static GsonBuilder gsonBuilder;
