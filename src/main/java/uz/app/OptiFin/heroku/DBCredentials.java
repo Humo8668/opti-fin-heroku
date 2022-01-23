@@ -33,7 +33,7 @@ public class DBCredentials extends HttpServlet {
     private static void refreshCredentials()
     {
         try{
-            String uriStr = "postgres://bekmyzbubqr:71a1186ef3295b424924be0f9165dff4e30f86f7fae4f4f405026c0e76ccd889@ec2-52-49-68-244.eu-west-1.compute.amazonaws.com:5432/ddu1rikpfr5jq6";//System.getenv("DATABASE_URL");
+            String uriStr = System.getenv("DATABASE_URL");//"postgres://bekmyzbubqr:71a1186ef3295b424924be0f9165dff4e30f86f7fae4f4f405026c0e76ccd889@ec2-52-49-68-244.eu-west-1.compute.amazonaws.com:5432/ddu1rikpfr5jq6";
             if(uriStr == null)
                 return;
             URI dbUri = new URI(uriStr);
