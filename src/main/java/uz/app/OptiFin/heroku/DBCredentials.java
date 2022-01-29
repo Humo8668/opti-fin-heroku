@@ -3,8 +3,17 @@ package uz.app.OptiFin.heroku;
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -14,6 +23,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonSyntaxException;
 
 
 @WebServlet("/getdbcredentials")
@@ -24,11 +34,66 @@ public class DBCredentials extends HttpServlet {
     private static String DB_PASSWORD = "";
 
     // ***** ACCESS *******
-    private String LOGIN = "opti-fin-client";
-    private String PASSWORD = "heroku-445566";
+    private static String LOGIN = "opti-fin-client";
+    private static String PASSWORD = "";
+    //private static HashMap<String, String> connectionUsers;
 
     // *******************
     static GsonBuilder gsonBuilder;
+    
+    static {
+        try {
+            Class.forName("org.postgresql.Driver");
+        } catch(Exception ex) {
+            ex.printStackTrace();
+        }
+
+        gsonBuilder = new GsonBuilder();
+        refreshCredentials();
+        refreshConnectionUser();
+    }
+    // *******************************************************************
+
+    private static HashMap<String, Object> getConnectionUser(String login) throws SQLException {
+        HashMap<String, Object> user = null;
+
+        Connection conn = DriverManager.getConnection(DB_JDBC_URL, DB_LOGIN, DB_PASSWORD);
+        PreparedStatement pStatement = conn.prepareStatement("select u.* from service.sc_connection_users u where u.login = ?");
+        pStatement.setString(1, login);
+        ResultSet rs = pStatement.executeQuery();
+        if(rs.next()) {
+            user = new HashMap<>();
+            ResultSetMetaData rsmd = rs.getMetaData();
+            for(int i = 1; i <= rsmd.getColumnCount(); i++) {
+                user.put(rsmd.getColumnName(i), rs.getObject(i));
+            }
+        }
+
+        return user;
+    }
+
+    private static String sha256Hash(String text) {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch(NoSuchAlgorithmException ex) {
+            ex.printStackTrace();
+            return "";
+        }
+        
+        byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+
+        StringBuilder hexString = new StringBuilder();
+        for (int i = 0; i < hash.length; i++) {
+            String hex = Integer.toHexString(0xff & hash[i]);
+            if(hex.length() == 1) 
+              hexString.append('0');
+            hexString.append(hex);
+        }
+
+        String hashStr = hexString.toString();
+        return hashStr;
+    }
 
     private static void refreshCredentials()
     {
@@ -50,10 +115,21 @@ public class DBCredentials extends HttpServlet {
         }
     }
 
-    static {
-        gsonBuilder = new GsonBuilder();
-        refreshCredentials();
+    private static void refreshConnectionUser()
+    {
+        HashMap<String, Object> user = null;
+        try {
+            user = getConnectionUser(LOGIN);
+        } catch(SQLException ex) {
+            ex.printStackTrace();
+        }
+
+        if(user == null) 
+            throw new RuntimeException("NO_SUCH_USER_FOUND");
+
+        PASSWORD = user.get("password_hash").toString();
     }
+
 
     protected String getRequestRawData(HttpServletRequest req) throws IOException
     {
@@ -72,7 +148,15 @@ public class DBCredentials extends HttpServlet {
         PrintWriter out = res.getWriter();
         Gson gson = gsonBuilder.create();
         String requestRawData = getRequestRawData(req);
-        Map requestJson = gson.fromJson(requestRawData, Map.class);
+        Map requestJson = null;
+        try {
+            requestJson = gson.fromJson(requestRawData, Map.class);
+        } catch(JsonSyntaxException ex) {
+            res.sendError(400);
+            out.flush();
+            return;
+        }
+        
         Map responseJsonMap = new HashMap<String, String>();
         Object loginObj = requestJson.get("login");
         Object passwordObj = requestJson.get("password");
@@ -90,13 +174,18 @@ public class DBCredentials extends HttpServlet {
             out.flush();
         } else 
         {
+            if("Y".equals(refresh.toString())) {
+                refreshConnectionUser();
+            }
+
             String input_login = loginObj.toString();
             String input_password = passwordObj.toString();
 
-            if(LOGIN.equals(input_login) && PASSWORD.equals(input_password))
+            if(LOGIN.equals(input_login) && PASSWORD.equals(sha256Hash(input_password)))
             {
-                if("Y".equals(refresh.toString()))
+                if("Y".equals(refresh.toString())) {
                     refreshCredentials();
+                }
 
                 responseJsonMap.put("errcode", "0");
                 responseJsonMap.put("errmessage", "ACCESS_GRANTED");

@@ -18,7 +18,7 @@ import com.google.gson.GsonBuilder;
 /**
  * EnvTest
  */
-@WebServlet("/envtest")
+//@WebServlet("/envtest")
 public class EnvTest extends HttpServlet  {
     static String DB_URI = "";
     // *******************
